@@ -7,7 +7,7 @@ import ray
 
 @ray.remote
 class BytePS:
-    def __init__(self, model, n_workers):
+    def __init__(self, model, sharded_keys, n_workers):
         self.n_workers = n_workers
         self.n_recv = {}
         self.ready_for_pull = {}
@@ -17,10 +17,11 @@ class BytePS:
 
         for key, param in enumerate(model.parameters()):
             if param.requires_grad:
-                self.n_recv[key] = 0
-                self.ready_for_pull[key] = False
-                self.store[key] = np.zeros(param.size())
-                self.locks[key] = Lock()
+                if key in sharded_keys:
+                    self.n_recv[key] = 0
+                    self.ready_for_pull[key] = False
+                    self.store[key] = np.zeros(param.size())
+                    self.locks[key] = Lock()
 
     def push(self, key, grad):
         self.locks[key].acquire()
