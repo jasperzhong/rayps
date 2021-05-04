@@ -17,6 +17,8 @@ class BytePS:
                 self.buffer[key] = np.zeros(param.size())
 
     def push(self, key, grad):
+        if self.n_recv[key] == 0:
+            self.buffer[key].fill(0)
         self.buffer[key] += grad
         self.n_recv[key] += 1
         if self.n_recv[key] == self.n_workers:
@@ -25,4 +27,6 @@ class BytePS:
 
     def pull(self, key):
         if self.ready_for_pull[key]:
+            self.ready_for_pull[key] = False
+            self.n_recv[key] = 0
             return self.buffer[key]
