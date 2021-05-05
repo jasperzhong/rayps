@@ -6,6 +6,7 @@ from torchvision.models import resnet50
 
 import rayps
 import rayps.ps
+from rayps.utils import shard
 
 
 class TestPushPull(unittest.TestCase):
@@ -15,7 +16,9 @@ class TestPushPull(unittest.TestCase):
 
     def test_single_worker_pushpull(self):
         model = resnet50()
-        ps = rayps.ps.BytePS.options(max_concurrency=8).remote(model, 1)
+        shards, key2shard = shard(8, model)
+        ps_list = [rayps.ps.BytePS.options(max_concurrency=8).remote(
+            model, shard, 1) for shard in shards]
 
         sent_grads = []
         futures = []
@@ -23,6 +26,7 @@ class TestPushPull(unittest.TestCase):
             if param.requires_grad:
                 grad = np.random.normal(size=param.size())
                 sent_grads.append(grad)
+                ps = ps_list[key2shard[key]]
                 ps.push.remote(key, grad)
                 futures.append(ps.pull.remote(key))
 
@@ -34,8 +38,9 @@ class TestPushPull(unittest.TestCase):
     def test_multi_workers_pushpull(self):
         model = resnet50()
         num_workers = 32
-        ps = rayps.ps.BytePS.options(
-            max_concurrency=num_workers).remote(model, num_workers)
+        shards, key2shard = shard(8, model)
+        ps_list = [rayps.ps.BytePS.options(max_concurrency=8).remote(
+            model, shard, num_workers) for shard in shards]
 
         sent_grads = []
         futures = []
@@ -44,6 +49,7 @@ class TestPushPull(unittest.TestCase):
                 grads = [np.random.normal(size=param.size())
                          for _ in range(num_workers)]
                 sent_grads.append(np.mean(grads, axis=0))
+                ps = ps_list[key2shard[key]]
                 [ps.push.remote(key, grad) for grad in grads]
                 futures.append(ps.pull.remote(key))
 
@@ -55,8 +61,9 @@ class TestPushPull(unittest.TestCase):
     def test_multi_iters_multi_workers_pushpull(self):
         model = resnet50()
         num_workers = 8
-        ps = rayps.ps.BytePS.options(
-            max_concurrency=num_workers).remote(model, num_workers)
+        shards, key2shard = shard(8, model)
+        ps_list = [rayps.ps.BytePS.options(max_concurrency=8).remote(
+            model, shard, num_workers) for shard in shards]
 
         for _ in range(10):
             sent_grads = []
@@ -66,6 +73,7 @@ class TestPushPull(unittest.TestCase):
                     grads = [np.random.normal(size=param.size())
                              for _ in range(num_workers)]
                     sent_grads.append(np.mean(grads, axis=0))
+                    ps = ps_list[key2shard[key]]
                     [ps.push.remote(key, grad) for grad in grads]
                     futures.append(ps.pull.remote(key))
 
